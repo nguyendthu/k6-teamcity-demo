@@ -1,0 +1,379 @@
+import {
+    group,
+    sleep,
+    check
+} from 'k6';
+import http from 'k6/http';
+
+// Version: 1.0
+// Creator: Thu Nguyen
+
+export let options = {
+
+    // Page views during various peaks
+    // 25th Aug 2019 9PM (highest load the past couple of months 2019 in analytics) 10k page views/min, 167/s
+    // 19th Nov 2018 9PM (highest load for black week 2018 in analytics) 20k page views/min, 333/s
+
+
+    // 1 VU equals the load of about 15-18 real users
+    // Current avg for 1 VU
+    // Page views/s: 0.8
+    // Requests/s : 1.4
+
+    // https://support.loadimpact.com/4.0/core-concepts/types-of-load-performance-tests/
+    // Basline test
+    stages: [
+        {
+            "duration": "10s",
+            "target": 1
+        },
+        {
+            "duration": "25s",
+            "target": 20
+        },
+        {
+            "duration": "20s",
+            "target": 30
+        },
+        {
+            "duration": "5s",
+            "target": 30
+        }
+    ],
+
+    // Stress test
+    //        stages: [
+    //        { "duration": "5m0s", "target": 100 },
+    //        { "duration": "10m0s", "target": 100 },
+    //        { "duration": "5m0s", "target": 200 },
+    //        { "duration": "10m0s", "target": 200 },
+    //        { "duration": "5m0s", "target": 400 },
+    //        { "duration": "10m0s", "target": 400 },
+    //        { "duration": "5m0s", "target": 800 },
+    //        { "duration": "10m0s", "target": 800 },
+    //        { "duration": "5m0s", "target": 1000 },
+    //        { "duration": "10m0s", "target": 1000 },
+    //        { "duration": "1m0s", "target": 0 }],
+
+    // Load test
+    //        stages: [
+    //        { "duration": "5m0s", "target": 1000 },
+    //        { "duration": "15m0s", "target": 1000 },
+    //        { "duration": "5m0s", "target": 0 }],
+
+    // Spike test
+    //        stages: [
+    //        { "duration": "1m0s", "target": 500 },
+    //        { "duration": "9m0s", "target": 500 },
+    //        { "duration": "3m0s", "target": 1000 },
+    //        { "duration": "7m0s", "target": 1000 },
+    //        { "duration": "10m0s", "target": 0 }],
+
+    // Soak test
+    //        stages: [
+    //        { "duration": "10m0s", "target": 1000 },
+    //        { "duration": "300m0s", "target": 1000 },
+    //        { "duration": "10m0s", "target": 0 }],
+
+    maxRedirects: 2,
+    discardResponseBodies: true,
+
+    ext: {
+        loadimpact: {
+            distribution: {
+                //loadZoneLabel1: { loadZone: "amazon:se:stockholm", percent: 40 },
+                loadZoneLabel2: {
+                    loadZone: "amazon:de:frankfurt",
+                    percent: 100
+                }
+            }
+        }
+    }
+};
+
+// Percentage of sessions that looked at products
+// Black week 2018: 67.39%
+// September 2018: 68.10%
+// September 2019: 67.85%
+var productPagePercentage = 70;
+
+// Percentage of sessions that also added to cart
+// Black week 2018: 18.06%
+// September 2018: 12.39%
+// September 2019: 11.41%
+var addToCartPercentage = 20;
+
+// Percentage of sessions that also went to the checkout
+// Black week 2018: 56.23%
+// September 2018: 42.48%
+// September 2019: 36.54%
+var checkoutPagePercentage = 60;
+
+// Percentage of sessions that also converted
+// Black week 2018: 28.32%
+// September 2018: 28.22%
+// September 2019: 34.83%
+var conversionPercentage = 30;
+
+// Pages / session
+// Black week 2018: 15.61
+// September 2018: 15.89
+// September 2019: 9.55
+
+
+var host = "foundation_demo.localtest.me";
+var baseUrl = "http://" + host;
+
+var startpages = ['/en'];
+var categories = [
+    '/en/new-arrivals/',
+    '/en/sale2/',
+    '/en/guides/inspiration/',
+    '/en/fashion/mens/mens-shoes/',
+    '/en/fashion/mens/mens-jackets/',
+    '/en/fashion/mens/mens-shirts/',
+    '/en/fashion/mens/mens-sweatshirts/',
+    '/en/fashion/womens/womens-shoes/',
+    '/en/fashion/womens/womens-jackets/',
+    '/en/fashion/womens/womens-tees/',
+    '/en/fashion/womens/womens-bottoms/'
+];
+
+var products = [
+    '/en/fashion/mens/mens-shoes/p-39813617/',
+    '/en/fashion/mens/mens-shoes/p-42518256/',
+    '/en/fashion/mens/mens-shoes/p-36127195/',
+    '/en/fashion/mens/mens-shoes/p-39850363/',
+    '/en/fashion/mens/mens-jackets/p-21320040/',
+    '/en/fashion/mens/mens-jackets/p-41071811/',
+    '/en/fashion/mens/mens-jackets/p-37378633/',
+    '/en/fashion/mens/mens-shirts/p-24797574/',
+    '/en/fashion/mens/mens-shirts/p-38193107/',
+    '/en/fashion/mens/mens-shirts/p-39101253/',
+    '/en/fashion/mens/mens-shirts/p-22471422/',
+    '/en/fashion/mens/mens-sweatshirts/p-22471487/',
+    '/en/fashion/mens/mens-sweatshirts/p-22471486/',
+    '/en/fashion/mens/mens-sweatshirts/p-22471481/',
+    '/en/fashion/mens/mens-sweatshirts/p-39205836/',
+    '/en/fashion/womens/womens-shoes/p-27312186/',
+    '/en/fashion/womens/womens-shoes/p-27312001/',
+    '/en/fashion/womens/womens-shoes/p-42708712/',
+    '/en/fashion/womens/womens-shoes/p-36276861/',
+    '/en/fashion/womens/womens-jackets/p-43093280/',
+    '/en/fashion/womens/womens-jackets/p-40707729/',
+    '/en/fashion/womens/womens-jackets/p-40707713/',
+    '/en/fashion/womens/womens-jackets/p-41136685/',
+    '/en/fashion/womens/womens-tees/p-40977269/',
+    '/en/fashion/womens/womens-tees/p-37001733/',
+    '/en/fashion/womens/womens-tees/p-41680136/',
+    '/en/fashion/womens/womens-tees/p-22153156/',
+    '/en/fashion/womens/womens-bottoms/p-40799209/',
+    '/en/fashion/womens/womens-bottoms/p-42087915/',
+    '/en/fashion/womens/womens-bottoms/p-42087852/'
+];
+
+var variants = [
+    'SKU-40707713',
+    'SKU-40707735',
+    'SKU-41136685',
+    'SKU-41136683',
+    'SKU-43093280',
+    'SKU-43093282',
+    'SKU-40707729',
+    'SKU-40707701',
+    'SKU-37001733',
+    'SKU-37001258',
+    'SKU-41680136',
+    'SKU-41680139',
+    'SKU-40977269',
+    'SKU-40977316',
+    'SKU-22153156',
+    'SKU-27436708',
+    'SKU-42087852',
+    'SKU-42087869',
+    'SKU-40799209',
+    'SKU-40799212',
+    'SKU-42087915',
+    'SKU-42087921',
+    'SKU-42708712',
+    'SKU-27312001',
+    'SKU-27312186',
+    'SKU-27312187',
+    'SKU-36276861',
+    'SKU-36278481',
+    'SKU-42518256',
+    'SKU-36127195',
+    'SKU-36127198',
+    'SKU-39813617',
+    'SKU-39850363',
+    'SKU-41071811',
+    'SKU-41071800',
+    'SKU-21320040',
+    'SKU-21320033',
+    'SKU-37378633',
+    'SKU-37378635',
+    'SKU-38193107',
+    'SKU-38193121',
+    'SKU-39101253',
+    'SKU-39101302',
+    'SKU-24797574',
+    'SKU-24796232',
+    'SKU-22471422',
+    'SKU-22471421',
+    'SKU-22471487',
+    'SKU-36210818',
+    'SKU-22471486',
+    'SKU-36210821',
+    'SKU-22471481'
+];
+
+
+var searchPages = ['/en/search'];
+
+var searchWords = ['coat',
+    'cotton',
+    'luke',
+    'TROUSER',
+    'Sweaters',
+    'Suits',
+    'white'];
+
+
+function randomItem(items) {
+    return items[Math.floor(Math.random() * items.length)];
+}
+
+function precentageCheck(percentage) {
+    return (Math.random() * 100) <= percentage;
+}
+
+
+export default function () {
+
+    initEnvParams();
+
+    // Visit Start page
+    StartPage();
+
+    // Percentage check to simulate different users doing different things on the site
+    if (!precentageCheck(productPagePercentage)) {
+        return;
+    }
+
+    if ((Math.random() * 100) < (productPagePercentage / 10)) {
+        Search();
+    }
+
+    var q = 1;
+    while (q <= 4) { //Couldn't get it working with for-loops
+        CategoryPage();
+        q++;
+    }
+
+    q = 1;
+    while (q <= 10) {
+        ProductPage();
+        q++;
+    }
+}
+/// Init environment params by CLI, e.g:   -e productPagePercentage=22 -e conversionPercentage=33
+function initEnvParams() {
+
+    if (__ENV.hostname !== undefined) {
+        host = __ENV.hostname;
+        baseUrl = "http://" + host;
+    }
+
+    if (__ENV.productPagePercentage !== undefined) {
+        productPagePercentage = __ENV.productPagePercentage;
+    }
+
+    if (__ENV.addToCartPercentage !== undefined) {
+        addToCartPercentage = __ENV.addToCartPercentage;
+    }
+
+    if (__ENV.checkoutPagePercentage !== undefined) {
+        checkoutPagePercentage = __ENV.checkoutPagePercentage;
+    }
+
+    if (__ENV.conversionPercentage !== undefined) {
+        conversionPercentage = __ENV.conversionPercentage;
+    }
+}
+function StartPage() {
+    group("Start page", function () {
+        let req, res;
+
+        res = http.get(baseUrl + randomItem(startpages));
+
+        check(res, {
+            "Page - status 200": (r) => r.status === 200
+        });
+    });
+}
+
+function CategoryPage() {
+    group("Category", function () {
+        let req, res;
+
+        res = http.get(baseUrl + randomItem(categories));
+
+        check(res, {
+            "Page - status 200": (r) => r.status === 200
+        });
+        //sleep(Math.random() * 1 + 3);
+
+        res = http.get(baseUrl + randomItem(categories) + "?facets=AvailableColors%3ANAVY");
+
+        check(res, {
+            "Page - status 200": (r) => r.status === 200
+        });
+        //sleep(Math.random() * 1 + 3);
+
+    });
+}
+
+
+function ProductPage() {
+    group("Product page", function () {
+        let req, res;
+
+        res = http.get(baseUrl + randomItem(products));
+
+        check(res, {
+            "Page - status 200": (r) => r.status === 200
+        });
+        //sleep(Math.random() * 1 + 2);
+        req = [{
+            "method": "get",
+            "url": baseUrl + randomItem(products) + "/panels",
+            "params": {
+                "headers": {
+                    "Sec-Fetch-Mode": "cors",
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-Client-Version": "3.687.3840",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36",
+                    "Content-Type": "application/json",
+                    "Accept": "*/*"
+                }
+            }
+        }];
+        res = http.batch(req);
+        //sleep(Math.random() * 1 + 5);
+    });
+}
+
+function Search() {
+    group("Search", function () {
+        let res;
+
+        var searchPage = randomItem(searchPages);
+        var searchString = randomItem(searchWords);
+        var currentSearchString = "";
+
+        res = http.get(baseUrl + searchPage + "?search=" + searchString);
+        check(res, {
+            "Search - status 200": (r) => r.status === 200
+        });
+    });
+}
