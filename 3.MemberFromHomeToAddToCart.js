@@ -29,15 +29,15 @@ export let options = {
         },
         {
             "duration": "25s",
-            "target": 20
+            "target": 1
         },
         {
             "duration": "20s",
-            "target": 30
+            "target": 1
         },
         {
             "duration": "5s",
-            "target": 30
+            "target": 1
         }
     ],
 
@@ -76,7 +76,7 @@ export let options = {
     //        { "duration": "10m0s", "target": 0 }],
 
     maxRedirects: 2,
-    discardResponseBodies: true,
+    //discardResponseBodies: true, // Require to set to false to get the body content that contain token
 
     ext: {
         loadimpact: {
@@ -123,8 +123,7 @@ var conversionPercentage = 30;
 
 
 var host = "foundation_demo.localtest.me";
-var baseUrl = "http://" + host;
-
+var baseUrl = 'http://' + host;
 var startpages = ['/en'];
 var categories = [
     '/en/new-arrivals/',
@@ -228,6 +227,14 @@ var variants = [
     'SKU-22471481'
 ];
 
+var members = [
+    { Uid: 'admin@example.com', Password: 'store' },
+    { Uid: 'shipping@example.com', Password: 'store' },
+    { Uid: 'editor@example.com', Password: 'store' },
+    { Uid: 'manager@example.com', Password: 'store' },
+    { Uid: 'supervisor@example.com', Password: 'store' },
+    { Uid: 'webaadmin@example.com', Password: 'store' }
+];
 
 var searchPages = ['/en/search'];
 
@@ -248,18 +255,17 @@ function precentageCheck(percentage) {
     return (Math.random() * 100) <= percentage;
 }
 
-
 export default function () {
 
     initEnvParams();
 
     // Visit Start page
-    StartPage();
+    LoginStartPage();
 
-    // Percentage check to simulate different users doing different things on the site
-    if (!precentageCheck(productPagePercentage)) {
-        return;
-    }
+    //// Percentage check to simulate different users doing different things on the site
+    //if (!precentageCheck(productPagePercentage)) {
+    //    return;
+    //}
 
     if ((Math.random() * 100) < (productPagePercentage / 10)) {
         Search();
@@ -276,7 +282,23 @@ export default function () {
         ProductPage();
         q++;
     }
+
+    if (!precentageCheck(addToCartPercentage)) {
+        return;
+    }
+
+    var itemsInCart = [];
+    q = 1;
+    while (q <= 7) {
+        var variantToAdd = randomItem(variants);
+        itemsInCart.push(variantToAdd);
+        AddToCart(variantToAdd);
+        q++;
+    }
+
+    LogoutPage();
 }
+
 /// Init environment params by CLI, e.g:   -e productPagePercentage=22 -e conversionPercentage=33
 function initEnvParams() {
 
@@ -301,18 +323,85 @@ function initEnvParams() {
         conversionPercentage = __ENV.conversionPercentage;
     }
 }
-function StartPage() {
+
+function LoginStartPage() {
     group("Start page", function () {
         let req, res;
 
-        res = http.get(baseUrl + randomItem(startpages));
+        var startPage = baseUrl + randomItem(startpages);
+        res = http.get(startPage);
 
         check(res, {
-            "Page - status 200": (r) => r.status === 200
+            "Start Page - status 200": (r) => r.status === 200
         });
+        //Get the body of the first page
+        let inputToken = res.html("#login-selector-signin form input[name=\"__RequestVerificationToken\"]").toArray()[0];
+        let token;
+
+        if (inputToken === undefined && res.status !== 200) {
+            console.log("Login token underfined " + res.status);
+            return;
+        }
+        else {
+            token = inputToken.val();
+            //console.log(token);
+        }
+
+        //Login page
+        LoginPage(token);
     });
 }
+function LoginPage(token) {
 
+    let member = randomItem(members);
+
+    let response = http.post(
+        baseUrl + "/PublicApi/InternalLogin",
+        'Content-Type: multipart/form-data;\r\n boundary="----WebKitFormBoundary1akCXWfWdq8IgdCc"\r\nDate: Wed, 15 Jul 2020 09:08:27 +0000\r\nMessage-Id: <1594804107644-26e15054-a76fdbd4-9641982f@localhost>\r\nMIME-Version: 1.0\r\n\r\n------WebKitFormBoundary1akCXWfWdq8IgdCc\r\nContent-Disposition: form-data; name=Email\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n' + member.Uid + '\r\n------WebKitFormBoundary1akCXWfWdq8IgdCc\r\nContent-Disposition: form-data; name=Password\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n' + member.Password + '\r\n------WebKitFormBoundary1akCXWfWdq8IgdCc\r\nContent-Disposition: form-data; name=RememberMe\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\nfalse\r\n------WebKitFormBoundary1akCXWfWdq8IgdCc\r\nContent-Disposition: form-data; name=ReturnUrl\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n------WebKitFormBoundary1akCXWfWdq8IgdCc\r\nContent-Disposition: form-data; name=__RequestVerificationToken\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n' + token + '\r\n------WebKitFormBoundary1akCXWfWdq8IgdCc--\r\n',
+        {
+            headers: {
+                Host: host,
+                Referer: baseUrl,
+                Connection: "keep-alive",
+                Accept: "*/*",
+                "Content-Type":
+                    "multipart/form-data; boundary=----WebKitFormBoundary1akCXWfWdq8IgdCc",
+                Origin: baseUrl,
+                "Accept-Encoding": "gzip, deflate",
+                "Accept-Language": "en-US,en;q=0.9,vi;q=0.8,da;q=0.7",
+            },
+        }
+    );
+
+    check(response, {
+        "Login - status 200": (r) => r.status === 200
+    });
+
+}
+function LogoutPage() {
+    let response = http.get(
+        baseUrl + "/publicapi/signout",
+        {
+            headers: {
+                Host: host,
+                Connection: "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                Accept:
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+                "Accept-Encoding": "gzip, deflate",
+                "Accept-Language": "en-US,en;q=0.9,vi;q=0.8,da;q=0.7",
+            },
+        }
+    );
+
+    check(response, {
+        "Logout - status": (r) => r.status === 200
+    });
+
+    //if (response.status !== 200) {
+    //    console.log(response.status + "-------" + response.html().text)
+    //}
+}
 function CategoryPage() {
     group("Category", function () {
         let req, res;
@@ -329,8 +418,27 @@ function CategoryPage() {
         check(res, {
             "Page - status 200": (r) => r.status === 200
         });
-        //sleep(Math.random() * 1 + 3);
 
+    });
+}
+
+function AddToCart(variant) {
+    group("Add to cart", function () {
+        let req, res;
+        let body = { Code: variant, Quantity: "1", Store: "delivery", requestFrom: "axios" };
+
+        req = [{
+            "method": "post",
+            "url": baseUrl + "/DefaultCart/AddToCart",
+            "body": body
+        }];
+        res = http.batch(req);
+
+        check(res[0], {
+            "Add to cart - status OK": (r) => r.status === 200
+        });
+
+        //sleep(Math.random() * 1 + 5);
     });
 }
 
@@ -344,22 +452,7 @@ function ProductPage() {
         check(res, {
             "Page - status 200": (r) => r.status === 200
         });
-        //sleep(Math.random() * 1 + 2);
-        req = [{
-            "method": "get",
-            "url": baseUrl + randomItem(products) + "/panels",
-            "params": {
-                "headers": {
-                    "Sec-Fetch-Mode": "cors",
-                    "X-Requested-With": "XMLHttpRequest",
-                    "X-Client-Version": "3.687.3840",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36",
-                    "Content-Type": "application/json",
-                    "Accept": "*/*"
-                }
-            }
-        }];
-        res = http.batch(req);
+
         //sleep(Math.random() * 1 + 5);
     });
 }
@@ -370,7 +463,6 @@ function Search() {
 
         var searchPage = randomItem(searchPages);
         var searchString = randomItem(searchWords);
-        var currentSearchString = "";
 
         res = http.get(baseUrl + searchPage + "?search=" + searchString);
         check(res, {

@@ -4,6 +4,7 @@ import {
     check
 } from 'k6';
 import http from 'k6/http';
+import { Counter } from "k6/metrics";
 
 // Version: 1.0
 // Creator: Thu Nguyen
@@ -29,15 +30,15 @@ export let options = {
         },
         {
             "duration": "25s",
-            "target": 20
+            "target": 10
         },
         {
             "duration": "20s",
-            "target": 30
+            "target": 25
         },
         {
             "duration": "5s",
-            "target": 30
+            "target": 25
         }
     ],
 
@@ -76,7 +77,7 @@ export let options = {
     //        { "duration": "10m0s", "target": 0 }],
 
     maxRedirects: 2,
-    discardResponseBodies: true,
+    //discardResponseBodies: true, // Require to set to false to get the body content that contain token
 
     ext: {
         loadimpact: {
@@ -124,7 +125,6 @@ var conversionPercentage = 30;
 
 var host = "foundation_demo.localtest.me";
 var baseUrl = "http://" + host;
-
 var startpages = ['/en'];
 var categories = [
     '/en/new-arrivals/',
@@ -173,61 +173,14 @@ var products = [
     '/en/fashion/womens/womens-bottoms/p-42087852/'
 ];
 
-var variants = [
-    'SKU-40707713',
-    'SKU-40707735',
-    'SKU-41136685',
-    'SKU-41136683',
-    'SKU-43093280',
-    'SKU-43093282',
-    'SKU-40707729',
-    'SKU-40707701',
-    'SKU-37001733',
-    'SKU-37001258',
-    'SKU-41680136',
-    'SKU-41680139',
-    'SKU-40977269',
-    'SKU-40977316',
-    'SKU-22153156',
-    'SKU-27436708',
-    'SKU-42087852',
-    'SKU-42087869',
-    'SKU-40799209',
-    'SKU-40799212',
-    'SKU-42087915',
-    'SKU-42087921',
-    'SKU-42708712',
-    'SKU-27312001',
-    'SKU-27312186',
-    'SKU-27312187',
-    'SKU-36276861',
-    'SKU-36278481',
-    'SKU-42518256',
-    'SKU-36127195',
-    'SKU-36127198',
-    'SKU-39813617',
-    'SKU-39850363',
-    'SKU-41071811',
-    'SKU-41071800',
-    'SKU-21320040',
-    'SKU-21320033',
-    'SKU-37378633',
-    'SKU-37378635',
-    'SKU-38193107',
-    'SKU-38193121',
-    'SKU-39101253',
-    'SKU-39101302',
-    'SKU-24797574',
-    'SKU-24796232',
-    'SKU-22471422',
-    'SKU-22471421',
-    'SKU-22471487',
-    'SKU-36210818',
-    'SKU-22471486',
-    'SKU-36210821',
-    'SKU-22471481'
+var members = [
+    { Uid: 'admin@example.com', Password: 'store' },
+    { Uid: 'shipping@example.com', Password: 'store' },
+    { Uid: 'editor@example.com', Password: 'store' },
+    { Uid: 'manager@example.com', Password: 'store' },
+    { Uid: 'supervisor@example.com', Password: 'store' },
+    { Uid: 'webaadmin@example.com', Password: 'store' }
 ];
-
 
 var searchPages = ['/en/search'];
 
@@ -239,31 +192,44 @@ var searchWords = ['coat',
     'Suits',
     'white'];
 
+let CounterReqCount = new Counter("Calls");
+let CounterReqProductCount = new Counter("Product Calls");
 
 function randomItem(items) {
     return items[Math.floor(Math.random() * items.length)];
 }
 
 function precentageCheck(percentage) {
-    return (Math.random() * 100) <= percentage;
+
+    var a = __VU % 10;
+    let result = a <= (percentage / 10);
+
+    //console.log("request made by VU " + __VU + ". ITER " + __ITER + ". A = " + a + ". Percent = " + percentage + " R = " + result);
+
+    return result;
+
+
+    //return (Math.random() * 100) <= percentage;
 }
 
 
 export default function () {
 
+    //Init percentages
     initEnvParams();
 
-    // Visit Start page
-    StartPage();
+    // Visit Start page and Login 
+    LoginStartPage();
+
+    CounterReqCount.add(1);
 
     // Percentage check to simulate different users doing different things on the site
     if (!precentageCheck(productPagePercentage)) {
         return;
     }
+    CounterReqProductCount.add(1);
 
-    if ((Math.random() * 100) < (productPagePercentage / 10)) {
-        Search();
-    }
+    Search();
 
     var q = 1;
     while (q <= 4) { //Couldn't get it working with for-loops
@@ -276,8 +242,12 @@ export default function () {
         ProductPage();
         q++;
     }
+
+    //Logout 
+    LogoutPage();
 }
-/// Init environment params by CLI, e.g:   -e productPagePercentage=22 -e conversionPercentage=33
+
+/// Init environment params by CLI, e.g:   -e productPagePercentage=22 -e addToCartPercentage=50 -e checkoutPagePercentage=70 -e conversionPercentage=20 
 function initEnvParams() {
 
     if (__ENV.hostname !== undefined) {
@@ -301,16 +271,96 @@ function initEnvParams() {
         conversionPercentage = __ENV.conversionPercentage;
     }
 }
-function StartPage() {
+
+function LoginStartPage() {
     group("Start page", function () {
         let req, res;
 
-        res = http.get(baseUrl + randomItem(startpages));
+        var startPage = baseUrl + randomItem(startpages);
+        res = http.get(startPage);
 
         check(res, {
-            "Page - status 200": (r) => r.status === 200
+            "Start Page - status 200": (r) => r.status === 200
         });
+        //Get the body of the first page
+        let inputToken = res.html("#login-selector-signin form input[name=\"__RequestVerificationToken\"]").toArray()[0];
+        let token;
+
+        if (inputToken === undefined && res.status !== 200) {
+            console.log("Login token underfined " + res.status);
+            return;
+        }
+        else if (res.status === 200) {
+            token = inputToken.val();
+            //console.log(token);
+
+            //Login page
+            LoginPage(token);
+        }
+
     });
+}
+
+
+
+function LoginPage(token) {
+
+    let member = randomItem(members);
+
+    let response = http.post(
+        baseUrl + "/PublicApi/InternalLogin",
+        'Content-Type: multipart/form-data;\r\n boundary="----WebKitFormBoundary1akCXWfWdq8IgdCc"\r\nDate: Wed, 15 Jul 2020 09:08:27 +0000\r\nMessage-Id: <1594804107644-26e15054-a76fdbd4-9641982f@localhost>\r\nMIME-Version: 1.0\r\n\r\n------WebKitFormBoundary1akCXWfWdq8IgdCc\r\nContent-Disposition: form-data; name=Email\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n' + member.Uid + '\r\n------WebKitFormBoundary1akCXWfWdq8IgdCc\r\nContent-Disposition: form-data; name=Password\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n' + member.Password + '\r\n------WebKitFormBoundary1akCXWfWdq8IgdCc\r\nContent-Disposition: form-data; name=RememberMe\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\nfalse\r\n------WebKitFormBoundary1akCXWfWdq8IgdCc\r\nContent-Disposition: form-data; name=ReturnUrl\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n------WebKitFormBoundary1akCXWfWdq8IgdCc\r\nContent-Disposition: form-data; name=__RequestVerificationToken\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n' + token + '\r\n------WebKitFormBoundary1akCXWfWdq8IgdCc--\r\n',
+        {
+            headers: {
+                Host: host,
+                Referer: baseUrl,
+                Connection: "keep-alive",
+                Accept: "*/*",
+                "Content-Type":
+                    "multipart/form-data; boundary=----WebKitFormBoundary1akCXWfWdq8IgdCc",
+                Origin: baseUrl,
+                "Accept-Encoding": "gzip, deflate",
+                "Accept-Language": "en-US,en;q=0.9,vi;q=0.8,da;q=0.7",
+            },
+        }
+    );
+
+    if (response.status === 200) {
+        check(response, {
+            "Login - status": (r) => r.status === 200
+        });
+    }
+    else {
+        let status = "Login - status" + response.status;
+        check(response, {
+            status: (r) => r.status !== 200
+        });
+    }
+}
+
+function LogoutPage() {
+    let response = http.get(
+        baseUrl + "/publicapi/signout",
+        {
+            headers: {
+                Host: host,
+                Connection: "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                Accept:
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+                "Accept-Encoding": "gzip, deflate",
+                "Accept-Language": "en-US,en;q=0.9,vi;q=0.8,da;q=0.7",
+            },
+        }
+    );
+
+    check(response, {
+        "Logout - status": (r) => r.status === 200
+    });
+
+    //if (response.status !== 200) {
+    //    console.log(response.status + "-------" + response.html().text)
+    //}
 }
 
 function CategoryPage() {
@@ -320,21 +370,19 @@ function CategoryPage() {
         res = http.get(baseUrl + randomItem(categories));
 
         check(res, {
-            "Page - status 200": (r) => r.status === 200
+            "Category - status 200": (r) => r.status === 200
         });
         //sleep(Math.random() * 1 + 3);
 
         res = http.get(baseUrl + randomItem(categories) + "?facets=AvailableColors%3ANAVY");
 
         check(res, {
-            "Page - status 200": (r) => r.status === 200
+            "Category - filter - status 200": (r) => r.status === 200
         });
         //sleep(Math.random() * 1 + 3);
 
     });
 }
-
-
 function ProductPage() {
     group("Product page", function () {
         let req, res;
@@ -370,11 +418,14 @@ function Search() {
 
         var searchPage = randomItem(searchPages);
         var searchString = randomItem(searchWords);
-        var currentSearchString = "";
 
         res = http.get(baseUrl + searchPage + "?search=" + searchString);
         check(res, {
             "Search - status 200": (r) => r.status === 200
         });
+
+        //if (res.status !== 200) {
+        //    console.log(res.status + "-------" + res.html().text)
+        //}
     });
 }

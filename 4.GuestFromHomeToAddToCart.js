@@ -29,15 +29,15 @@ export let options = {
         },
         {
             "duration": "25s",
-            "target": 20
+            "target": 1
         },
         {
             "duration": "20s",
-            "target": 30
+            "target": 1
         },
         {
             "duration": "5s",
-            "target": 30
+            "target": 1
         }
     ],
 
@@ -81,7 +81,7 @@ export let options = {
     ext: {
         loadimpact: {
             projectID: __ENV.ProjectId,
-            distribution: {
+            distribution: {                
                 //loadZoneLabel1: { loadZone: "amazon:se:stockholm", percent: 40 },
                 loadZoneLabel2: {
                     loadZone: "amazon:de:frankfurt",
@@ -239,7 +239,6 @@ var searchWords = ['coat',
     'Suits',
     'white'];
 
-
 function randomItem(items) {
     return items[Math.floor(Math.random() * items.length)];
 }
@@ -248,7 +247,6 @@ function precentageCheck(percentage) {
     return (Math.random() * 100) <= percentage;
 }
 
-
 export default function () {
 
     initEnvParams();
@@ -256,7 +254,7 @@ export default function () {
     // Visit Start page
     StartPage();
 
-    // Percentage check to simulate different users doing different things on the site
+    //// Percentage check to simulate different users doing different things on the site
     if (!precentageCheck(productPagePercentage)) {
         return;
     }
@@ -276,7 +274,21 @@ export default function () {
         ProductPage();
         q++;
     }
+
+    if (!precentageCheck(addToCartPercentage)) {
+        return;
+    }
+
+    var itemsInCart = [];
+    q = 1;
+    while (q <= 7) {
+        var variantToAdd = randomItem(variants);
+        itemsInCart.push(variantToAdd);
+        AddToCart(variantToAdd);
+        q++;
+    }
 }
+
 /// Init environment params by CLI, e.g:   -e productPagePercentage=22 -e conversionPercentage=33
 function initEnvParams() {
 
@@ -301,6 +313,7 @@ function initEnvParams() {
         conversionPercentage = __ENV.conversionPercentage;
     }
 }
+
 function StartPage() {
     group("Start page", function () {
         let req, res;
@@ -310,6 +323,7 @@ function StartPage() {
         check(res, {
             "Page - status 200": (r) => r.status === 200
         });
+
     });
 }
 
@@ -329,11 +343,29 @@ function CategoryPage() {
         check(res, {
             "Page - status 200": (r) => r.status === 200
         });
-        //sleep(Math.random() * 1 + 3);
 
     });
 }
 
+function AddToCart(variant) {
+    group("Add to cart", function () {
+        let req, res;
+        let body = { Code: variant, Quantity: "1", Store: "delivery", requestFrom: "axios" };
+
+        req = [{
+            "method": "post",
+            "url": baseUrl + "/DefaultCart/AddToCart",
+            "body": body
+        }];
+        res = http.batch(req);
+
+        check(res[0], {
+            "Add to cart - status OK": (r) => r.status === 200
+        });
+
+        //sleep(Math.random() * 1 + 5);
+    });
+}
 
 function ProductPage() {
     group("Product page", function () {
@@ -344,25 +376,11 @@ function ProductPage() {
         check(res, {
             "Page - status 200": (r) => r.status === 200
         });
-        //sleep(Math.random() * 1 + 2);
-        req = [{
-            "method": "get",
-            "url": baseUrl + randomItem(products) + "/panels",
-            "params": {
-                "headers": {
-                    "Sec-Fetch-Mode": "cors",
-                    "X-Requested-With": "XMLHttpRequest",
-                    "X-Client-Version": "3.687.3840",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36",
-                    "Content-Type": "application/json",
-                    "Accept": "*/*"
-                }
-            }
-        }];
-        res = http.batch(req);
+
         //sleep(Math.random() * 1 + 5);
     });
 }
+
 
 function Search() {
     group("Search", function () {
@@ -370,7 +388,6 @@ function Search() {
 
         var searchPage = randomItem(searchPages);
         var searchString = randomItem(searchWords);
-        var currentSearchString = "";
 
         res = http.get(baseUrl + searchPage + "?search=" + searchString);
         check(res, {
